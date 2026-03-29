@@ -14,6 +14,44 @@
 
 ## 1. Static library task
 
+### How to build manually
+
+Compile source to object file:
+
+```bash
+gcc -c sort.c -o sort.o
+```
+
+Create static library:
+
+```bash
+ar rcs libsort.a sort.o
+```
+
+Flags for `ar`:
+
+* `r` — replace / add files
+* `c` — create archive if needed
+* `s` — create symbol index
+
+Link executable with static library:
+
+```bash
+gcc main.c -L. -lsort -o program
+```
+
+or directly:
+
+```bash
+gcc main.c libsort.a -o program
+```
+
+### Notes
+
+* Header `.h` is still needed for declarations.
+* The library contains compiled implementation.
+* Static libraries are more useful when combining many `.o` files into one module.
+
 ### Goal
 
 Create a sorting library and a `Makefile` that compiles the project.
@@ -53,6 +91,99 @@ gcc main.c -L. -lsort -o program
 ---
 
 ## 2. Dynamic library task
+
+### How to build manually
+
+Compile source for shared library:
+
+```bash
+gcc -c -fPIC bubble_sort.c -o bubble_sort.o
+```
+
+Create shared library:
+
+```bash
+gcc -shared -o libsort.so bubble_sort.o
+```
+
+### Two ways to use a dynamic library
+
+#### A. Normal dynamic linking
+
+```bash
+gcc main.c -L. -lsort -o program
+```
+
+The program is linked against the dynamic library during build.
+
+#### B. Runtime loading with `dlopen`
+
+```c
+void *handle = dlopen("./libsort.so", RTLD_LAZY);
+```
+
+Then use:
+
+* `dlsym` to get a function address,
+* `dlclose` to close the library.
+
+If using `dlopen`, compile the program with:
+
+```bash
+gcc main.c -o program -ldl
+```
+
+### Runtime loader path
+
+Sometimes the system cannot find `.so` in the current directory.
+
+Use:
+
+```bash
+LD_LIBRARY_PATH=. ./program
+```
+
+or:
+
+```bash
+export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
+./program
+```
+
+---
+
+## `dlopen`, `dlsym`, `dlclose`
+
+### `dlopen`
+
+Loads a shared library during program execution.
+
+```c
+void *handle = dlopen("./libsort.so", RTLD_LAZY);
+```
+
+### `dlsym`
+
+Gets the address of a symbol (for example, a function) from the library.
+
+```c
+sort_ptr bubble_sort = (sort_ptr)dlsym(handle, "bubble_sort");
+```
+
+### `dlclose`
+
+Closes the dynamically loaded library.
+
+```c
+dlclose(handle);
+```
+
+### Typical flow
+
+1. Load library with `dlopen`
+2. Get function address with `dlsym`
+3. Call function through function pointer
+4. Close library with `dlclose`
 
 ### Goal
 
@@ -156,41 +287,3 @@ libsort.so: bubble_sort.o
 clean:
 	rm -f *.o *.so program
 ```
-
----
-
-# Template for future labs
-
-## Lab X — [topic]
-
-### Goal
-
-Describe what the lab required.
-
-### Files
-
-List important files.
-
-### Commands used
-
-```bash
-# commands here
-```
-
-### Important concepts
-
-* concept 1
-* concept 2
-* concept 3
-
-### What to remember
-
-* point 1
-* point 2
-* point 3
-
-### Common mistakes
-
-* mistake 1
-* mistake 2
-* mistake 3
