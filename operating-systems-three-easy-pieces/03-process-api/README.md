@@ -191,6 +191,10 @@ This means:
 * block until it finishes
 
 ---
+Jasne — poniżej masz **oczyszczoną, spójną i poprawioną** wersję do README, w tym też sekcję o przekierowaniu `stdout`, krótką wzmiankę o `pipe()` i `kill()`.
+
+---
+
 ### `exec()`
 
 `exec()` is used to run a **different program inside the current process**.
@@ -200,7 +204,7 @@ Important:
 * `exec()` does **not** create a new process
 * it **replaces** the current process image with a new program
 
-So the common pattern is:
+A common pattern is:
 
 * `fork()` creates a child process
 * `exec()` is called in the child
@@ -208,7 +212,7 @@ So the common pattern is:
 
 ---
 
-### Main idea
+#### Main idea
 
 Before `exec()`:
 
@@ -218,21 +222,21 @@ After `exec()`:
 
 * the **same process** is now running program B
 
-So `exec()` does not start an additional process.
+So `exec()` does not create an additional process.
 It transforms the already existing one.
 
 If `exec()` succeeds:
 
 * the old code is gone
-* execution does **not** return to the line after `exec()`
+* execution does **not** continue after the `exec()` call
 
 If `exec()` returns, it usually means an error occurred.
 
 ---
 
-### What exactly changes after `exec()`
+#### What changes after `exec()`
 
-When `exec()` runs successfully, the OS:
+When `exec()` succeeds, the OS:
 
 * loads code and static data from the new executable
 * replaces the old code and old static data
@@ -240,19 +244,19 @@ When `exec()` runs successfully, the OS:
 * starts execution of the new program from its entry point
 * passes the provided arguments as `argv[]`
 
-So from the program’s point of view, it is almost as if the old process image never existed.
+So from the program’s point of view, it is almost as if the previous process image never existed.
 
 ---
 
-### Why `fork()` + `exec()` are often used together
+#### Why `fork()` + `exec()` are often used together
 
 This is the standard UNIX pattern:
 
-* `fork()` makes a copy of the current process
-* the child can then call `exec()` to run another program
-* the parent can continue its own work or wait for the child
+* `fork()` creates a child process
+* the child calls `exec()` to run a different program
+* the parent can continue its work or wait for the child
 
-This is very useful in shells.
+This pattern is especially useful in shells.
 
 Example idea:
 
@@ -281,7 +285,7 @@ The main differences are:
 
 ---
 
-### `l` vs `v`
+#### `l` vs `v`
 
 * `l` = **list**
 
@@ -306,7 +310,7 @@ execv("/bin/ls", args);
 
 ---
 
-### `p`
+#### `p`
 
 * `p` = search the program in `PATH`
 
@@ -316,19 +320,19 @@ Example:
 execlp("ls", "ls", "-l", NULL);
 ```
 
-You do not need to write the full path like `/bin/ls`.
+You do not need to provide the full path like `/bin/ls`.
 
 ---
 
-### `e`
+#### `e`
 
 * `e` = provide a custom environment
 
-This is useful when you want the new program to run with your own set of environment variables instead of inheriting the current ones.
+This is useful when you want the new program to run with your own environment variables instead of inheriting the current ones.
 
 ---
 
-### Example with `fork()` and `execvp()`
+### Example: `fork()` + `execvp()`
 
 ```c
 #include <stdio.h>
@@ -364,11 +368,11 @@ int main(int argc, char *argv[]) {
 
 ---
 
-### How this example works
+#### How this example works
 
 1. The program starts as one process.
 2. `fork()` creates a child process.
-3. The parent and child both continue from the line after `fork()`.
+3. Both parent and child continue from the line after `fork()`.
 4. In the child:
 
    * `execvp("wc", myargs)` is called
@@ -384,7 +388,7 @@ wc code3-3.c
 
 ---
 
-### Important note about arguments
+#### Important note about arguments
 
 In:
 
@@ -411,3 +415,177 @@ char *myargs[] = {"wc", "code3-3.c", NULL};
 * the array `myargs` itself is a local variable, so it is typically stored on the **stack**
 * the string literals `"wc"` and `"code3-3.c"` are stored in static read-only memory
 * the **heap is not used** here
+
+---
+
+### Example: redirecting `stdout` to a file
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+
+int main() {
+    printf("parent process(%d) started\n", getpid());
+
+    int rc = fork();
+
+    if (rc < 0) {
+        perror("fork");
+        exit(1);
+    } else if (rc > 0) {
+        printf("this process(%d) is parent of process(%d)\n", getpid(), rc);
+        wait(NULL);
+    } else {
+        printf("it's child process(%d)\n", getpid());
+
+        // close standard output (fd = 1)
+        close(STDOUT_FILENO);
+
+        // open file; because fd 1 is free now, this file will usually become stdout
+        int out_file = open("out.txt", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+        if (out_file < 0) {
+            perror("opening/creating file");
+            _exit(1);
+        }
+
+        char *myargs[] = {"wc", "code3-4.c", NULL};
+
+        // output of wc will be written to out.txt instead of the terminal
+        execvp(myargs[0], myargs);
+
+        perror("execvp");
+        _exit(1);
+    }
+
+    return 0;
+}
+```
+
+---
+
+#### How redirection works here
+
+This part is the key:
+
+```c
+close(STDOUT_FILENO);
+open("out.txt", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+```
+
+Explanation:
+
+* `STDOUT_FILENO` is file descriptor `1`
+* `close(STDOUT_FILENO)` closes standard output
+* `open()` returns the **lowest available file descriptor**
+* because descriptor `1` is now free, the new file usually gets descriptor `1`
+
+So after that, `stdout` points to `out.txt` instead of the terminal.
+
+Then:
+
+```c
+execvp(myargs[0], myargs);
+```
+
+runs `wc`, and `wc` writes its normal output to `stdout`.
+
+But now `stdout` is the file `out.txt`, so the result is saved there.
+
+This is basically the low-level version of:
+
+```bash
+wc code3-4.c > out.txt
+```
+
+---
+
+#### Note about file permissions
+
+In:
+
+```c
+open("out.txt", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+```
+
+`0644` is written in **octal notation**, which is the standard way to specify UNIX file permissions.
+
+Common permissions:
+
+* `0644` → owner can read/write, group and others can read
+* `0744` → owner can read/write/execute, group and others can only read
+
+Important:
+
+* if the file already exists, `open(..., O_TRUNC, ...)` truncates it
+* but it does **not** change existing permissions
+* permissions passed in `open()` matter only when a **new file is created**
+
+---
+
+### `pipe()`
+
+UNIX pipes are implemented with the `pipe()` system call.
+
+The idea:
+
+* output of one process becomes input of another process
+* the kernel provides a pipe buffer between them
+* this allows commands to be chained together
+
+Example:
+
+```bash
+grep -o foo file.txt | wc -l
+```
+
+What happens here:
+
+* `grep -o foo file.txt` prints every match
+* `wc -l` counts how many lines it receives
+* the output of `grep` is connected to the input of `wc` through a pipe
+
+So pipes are another example of how `fork()`, `exec()`, and file descriptors are used together.
+
+---
+
+## Other parts of Process API
+
+### `kill()`
+
+`kill()` is used to send signals to a process.
+
+Despite the name, it is not only for killing processes.
+It can be used to send many kinds of signals, for example:
+
+* `SIGTERM` → ask a process to terminate
+* `SIGKILL` → force termination
+* `SIGSTOP` → stop a process
+* `SIGCONT` → continue a stopped process
+
+Example:
+
+```c
+kill(pid, SIGTERM);
+```
+
+This sends `SIGTERM` to the process with id `pid`.
+
+---
+
+### Signals
+
+Signals are a lightweight mechanism for **inter-process communication and process control**.
+
+They are used to notify a process that:
+
+* something happened
+* it should terminate
+* it should stop
+* it should continue
+* a child process changed state
+
+Signals do **not** carry normal data like pipes or sockets.
+They are mostly used for **notifications and control**.
